@@ -103,11 +103,8 @@ let make = (
   let elementsOutsideBilling = React.useMemo(() => {
     missingRequiredFieldsFiltered
     ->Array.filter(field =>
-      (
-        !(field.confirmRequestWritePath->String.startsWith(billingPrefix)) ||
-        field.fieldRenderType === CardHolderName
-      ) &&
-      field.fieldRenderType !== Email
+      (!(field.confirmRequestWritePath->String.startsWith(billingPrefix)) ||
+      field.fieldRenderType === CardHolderName) && field.fieldRenderType !== Email
     )
     ->DynamicFieldInput.categorizeDynamicFields
   }, [missingRequiredFieldsFiltered])
@@ -115,11 +112,8 @@ let make = (
   let elementsInsideBilling = React.useMemo(() => {
     missingRequiredFieldsFiltered
     ->Array.filter(field =>
-      (
-        field.confirmRequestWritePath->String.startsWith(billingPrefix) &&
-        field.fieldRenderType !== CardHolderName
-      ) ||
-      field.fieldRenderType === Email
+      (field.confirmRequestWritePath->String.startsWith(billingPrefix) &&
+        field.fieldRenderType !== CardHolderName) || field.fieldRenderType === Email
     )
     ->DynamicFieldInput.categorizeDynamicFields
   }, [missingRequiredFieldsFiltered])
@@ -152,7 +146,7 @@ let make = (
   let spacedStylesForBillingDetails = isSpacedInnerLayout ? "p-2" : "my-2"
   let hasAnyField =
     DynamicFieldInput.groupElementsByRow(elementsOutsideBilling)->Array.length > 0 ||
-    DynamicFieldInput.groupElementsByRow(elementsInsideBilling)->Array.length > 0
+      DynamicFieldInput.groupElementsByRow(elementsInsideBilling)->Array.length > 0
   let setAreRequiredFieldsValid = Recoil.useSetRecoilState(areRequiredFieldsValid)
 
   <>

@@ -4,15 +4,61 @@ type dynamicFieldElement =
   | Card(array<fieldConfig>)
   | FullName(fieldConfig, fieldConfig)
   | Email(array<fieldConfig>)
-  | Generic(fieldConfig)
+  | Phone(fieldConfig)
+  | DateOfBirth(fieldConfig)
+  | StateDropdown(fieldConfig, string)
+  | CountryDropdown(fieldConfig, array<DropdownField.optionType>)
+  | PhoneCountryCodeDropdown(fieldConfig)
+  | CryptoNetworkDropdown(fieldConfig, string)
+  | GenericDropdown(fieldConfig, array<DropdownField.optionType>, string)
+  | GenericInput(fieldConfig)
 
 let elementPrimaryField = element =>
   switch element {
   | Card(fields) => fields->Array.get(0)
   | FullName(first, _) => Some(first)
   | Email(fields) => fields->Array.get(0)
-  | Generic(field) => Some(field)
+  | Phone(field)
+  | DateOfBirth(field)
+  | StateDropdown(field, _)
+  | CountryDropdown(field, _)
+  | PhoneCountryCodeDropdown(field)
+  | CryptoNetworkDropdown(field, _)
+  | GenericDropdown(field, _, _)
+  | GenericInput(field) =>
+    Some(field)
   }
+
+// Prepares dropdown options from a fieldConfig; applies ISO→country name conversion for country fields.
+let prepareDropdownOptions = (field: fieldConfig): array<DropdownField.optionType> => {
+  let rawOptions = field.dropdownOptions->Option.getOr([])
+  if field.confirmRequestWritePath->String.endsWith(".country") {
+    rawOptions
+    ->Utils.isoOptionsToCountryNames
+    ->DropdownField.updateArrayOfStringToOptionsTypeArray
+  } else {
+    rawOptions->DropdownField.updateArrayOfStringToOptionsTypeArray
+  }
+}
+
+// Classifies a Dropdown field into a specific dynamicFieldElement variant based on path suffix.
+let classifyDropdown = (field: fieldConfig): dynamicFieldElement => {
+  let path = field.confirmRequestWritePath
+  switch path {
+  | _ if path->String.endsWith(".state") =>
+    let countryPath = path->String.replace(".state", ".country")
+    StateDropdown(field, countryPath)
+  | _ if path->String.endsWith(".country") => CountryDropdown(field, prepareDropdownOptions(field))
+  | _ if path->String.endsWith(".country_code") => PhoneCountryCodeDropdown(field)
+  | _ if path->String.endsWith("crypto.network") =>
+    let currencyPath = path->String.replace("crypto.network", "crypto.pay_currency")
+    CryptoNetworkDropdown(field, currencyPath)
+  | _ =>
+    let options = prepareDropdownOptions(field)
+    let initialValue = options->Array.get(0)->Option.map(o => o.value)->Option.getOr("")
+    GenericDropdown(field, options, initialValue)
+  }
+}
 
 let categorizeDynamicFields = (fields: array<fieldConfig>): array<dynamicFieldElement> => {
   let cardFields = []
@@ -24,11 +70,14 @@ let categorizeDynamicFields = (fields: array<fieldConfig>): array<dynamicFieldEl
     let path = field.confirmRequestWritePath
     switch field.fieldRenderType {
     | CardNumber | Cvc => cardFields->Array.push(field)
-    | _ when path->String.startsWith("payment_method_data.card.") => cardFields->Array.push(field)
+    | _ if path->String.startsWith("payment_method_data.card.") => cardFields->Array.push(field)
     | CardHolderName => cardHolderNameFields->Array.push(field)
     | Email => emailFields->Array.push(field)
-    | Dropdown when field.dropdownOptions === None => ()
-    | _ => generics->Array.push(Generic(field))
+    | Phone => generics->Array.push(Phone(field))
+    | Date => generics->Array.push(DateOfBirth(field))
+    | Dropdown if field.dropdownOptions === None => ()
+    | Dropdown => generics->Array.push(classifyDropdown(field))
+    | Generic => generics->Array.push(GenericInput(field))
     }
   })
 
@@ -40,27 +89,31 @@ let categorizeDynamicFields = (fields: array<fieldConfig>): array<dynamicFieldEl
   }
 
   // FullName / Generic fallback
-  let firstNameField = cardHolderNameFields->Array.find(field =>
-    field.confirmRequestWritePath->String.endsWith(".first_name")
-  )
-  let lastNameField = cardHolderNameFields->Array.find(field =>
-    field.confirmRequestWritePath->String.endsWith(".last_name")
-  )
+  let firstNameField =
+    cardHolderNameFields->Array.find(field =>
+      field.confirmRequestWritePath->String.endsWith(".first_name")
+    )
+  let lastNameField =
+    cardHolderNameFields->Array.find(field =>
+      field.confirmRequestWritePath->String.endsWith(".last_name")
+    )
   switch (firstNameField, lastNameField) {
   | (Some(first), Some(last)) => result->Array.push(FullName(first, last))
-  | (Some(first), None) => result->Array.push(Generic(first))
-  | (None, Some(last)) => result->Array.push(Generic(last))
+  | (Some(first), None) => result->Array.push(GenericInput(first))
+  | (None, Some(last)) => result->Array.push(GenericInput(last))
   | (None, None) => ()
   }
 
   // Email
   if emailFields->Array.length > 0 {
     let sorted =
-      emailFields->Array.toSorted((a, b) => (a.fieldDisplayOrder - b.fieldDisplayOrder)->Int.toFloat)
+      emailFields->Array.toSorted((a, b) =>
+        (a.fieldDisplayOrder - b.fieldDisplayOrder)->Int.toFloat
+      )
     result->Array.push(Email(sorted))
   }
 
-  // Generics (already constructed as Generic(...))
+  // Generics
   generics->Array.forEach(element => result->Array.push(element))
 
   // Sort all by fieldDisplayOrder of primary field
@@ -75,11 +128,13 @@ let categorizeDynamicFields = (fields: array<fieldConfig>): array<dynamicFieldEl
 
 // Groups an array of dynamicFieldElement by layoutRowId of the primary field.
 // Elements with no layoutRowId each form their own singleton row.
-let groupElementsByRow = (elements: array<dynamicFieldElement>): array<array<dynamicFieldElement>> => {
+let groupElementsByRow = (elements: array<dynamicFieldElement>): array<
+  array<dynamicFieldElement>,
+> => {
   let rows: array<array<dynamicFieldElement>> = []
   let rowMap: Dict.t<array<dynamicFieldElement>> = Dict.make()
 
-  // Card elements handled in CardPayment.res 
+  // Card elements handled in CardPayment.res
   let renderableElements = elements->Array.filter(element =>
     switch element {
     | Card(_) => false
@@ -116,79 +171,24 @@ let renderElement = (element: dynamicFieldElement, ~fieldRef: React.ref<Nullable
     let paths = fields->Array.map(f => f.confirmRequestWritePath)
     <EmailField fieldConfig={fields->Array.getUnsafe(0)} paths />
 
-  | Generic(field) =>
-    switch field.fieldRenderType {
-    | Phone => <PhoneField fieldConfig=field />
+  | Phone(field) => <PhoneField fieldConfig=field />
 
-    | Date => <DateOfBirth fieldConfig=field />
+  | DateOfBirth(field) => <DateOfBirth fieldConfig=field />
 
-    | Dropdown =>
-      if field.confirmRequestWritePath->String.endsWith(".state") {
-        let countryFieldPath =
-          field.confirmRequestWritePath->String.replace(".state", ".country")
-        <StateDropdownField fieldConfig=field countryFieldPath />
-      } else if field.confirmRequestWritePath->String.endsWith(".country") {
-        let isoCodes = field.dropdownOptions->Option.getOr([])
-        let options =
-          isoCodes
-          ->Utils.isoOptionsToCountryNames
-          ->DropdownField.updateArrayOfStringToOptionsTypeArray
-        <CountryDropdownField fieldConfig=field options />
-      } else if field.confirmRequestWritePath->String.endsWith(".country_code") {
-        <PhoneCountryCodeDropdownField fieldConfig=field />
-      } else if field.confirmRequestWritePath->String.endsWith("crypto.network") {
-        let currencyPath =
-          field.confirmRequestWritePath->String.replace("crypto.network", "crypto.pay_currency")
-        <CryptoCurrencyNetworks networkField=field currencyFieldPath=currencyPath />
-      } else {
-        let options =
-          field.dropdownOptions
-          ->Option.getOr([])
-          ->DropdownField.updateArrayOfStringToOptionsTypeArray
-        let initialValue =
-          options->Array.get(0)->Option.map(o => o.value)->Option.getOr("")
-        <GenericDropdownField fieldConfig=field options initialValue />
-      }
+  | StateDropdown(field, countryPath) =>
+    <StateDropdownField fieldConfig=field countryFieldPath=countryPath />
 
-    | CardNumber | Cvc | CardHolderName | Email => React.null // safety net — handled by dedicated elements
+  | CountryDropdown(field, options) => <CountryDropdownField fieldConfig=field options />
 
-    | Generic =>
-      let {localeString} = Recoil.useRecoilValueFromAtom(RecoilAtoms.configAtom)
-      let {label, placeholder} = DynamicFieldsUtils.resolveFieldTexts(
-        ~field,
-        ~localeObject=localeString,
-      )
-      let autocomplete = field.htmlAutocompleteAttribute->Option.getOr("on")
-      let validate = DynamicFieldsUtils.resolveValidator(~field, ~localeObject=localeString)
-      <ReactFinalForm.Field name={field.confirmRequestWritePath} validate={Some(validate)}>
-        {(fieldProps: ReactFinalForm.Field.fieldProps) => {
-          let {input, meta} = fieldProps
-          let value = input.value->Option.getOr("")
-          let isValid = if meta.touched {
-            Some(meta.valid)
-          } else {
-            None
-          }
-          let errorString = if meta.touched && meta.invalid {
-            meta.error->Option.getOr("")
-          } else {
-            ""
-          }
-          <PaymentInputField
-            fieldName={label}
-            value
-            onChange={ev => input.onChange(ReactEvent.Form.target(ev)["value"])}
-            onBlur={_ev => input.onBlur()}
-            isValid
-            errorString
-            placeholder
-            inputRef={fieldRef}
-            autocomplete
-            maxLength=?{field.maxInputLength}
-          />
-        }}
-      </ReactFinalForm.Field>
-    }
+  | PhoneCountryCodeDropdown(field) => <PhoneCountryCodeDropdownField fieldConfig=field />
+
+  | CryptoNetworkDropdown(field, currencyPath) =>
+    <CryptoCurrencyNetworks networkField=field currencyFieldPath=currencyPath />
+
+  | GenericDropdown(field, options, initialValue) =>
+    <GenericDropdownField fieldConfig=field options initialValue />
+
+  | GenericInput(field) => <GenericInputField fieldConfig=field fieldRef />
   }
 }
 
@@ -218,9 +218,7 @@ let makeRow = (~fields: array<dynamicFieldElement>) => {
           ->Option.getOr(i->Int.toString) ++
           "-" ++
           i->Int.toString
-        <div
-          key
-          style={flexGrow: flex->Float.toString, flexShrink: "1", flexBasis: "0%"}>
+        <div key style={flexGrow: flex->Float.toString, flexShrink: "1", flexBasis: "0%"}>
           {renderElement(element, ~fieldRef)}
         </div>
       })

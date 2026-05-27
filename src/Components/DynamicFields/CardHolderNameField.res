@@ -10,6 +10,7 @@ let make = (~firstNameField: fieldConfig, ~lastNameField: fieldConfig) => {
     ~field=firstNameField,
     ~localeObject=localeString,
   )
+  let autocomplete = firstNameField.htmlAutocompleteAttribute
 
   let firstValidator = DynamicFieldsUtils.resolveValidator(
     ~field=firstNameField,
@@ -69,6 +70,6 @@ let make = (~firstNameField: fieldConfig, ~lastNameField: fieldConfig) => {
     errorString
     placeholder
     inputRef={fieldRef}
-    autocomplete="cc-name"
+    autocomplete={autocomplete->Option.getOr("cc-name")}
   />
 }

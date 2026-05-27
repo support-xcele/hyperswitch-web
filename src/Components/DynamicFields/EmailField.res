@@ -7,7 +7,7 @@ let make = (~fieldConfig: fieldConfig, ~paths: array<string>) => {
     ~field=fieldConfig,
     ~localeObject=localeString,
   )
-  let autocomplete = fieldConfig.htmlAutocompleteAttribute->Option.getOr("email")
+  let autocomplete = fieldConfig.htmlAutocompleteAttribute
   let validate = DynamicFieldsUtils.resolveValidator(~field=fieldConfig, ~localeObject=localeString)
 
   switch paths->Array.get(0) {
@@ -43,7 +43,7 @@ let make = (~fieldConfig: fieldConfig, ~paths: array<string>) => {
       errorString
       placeholder
       inputRef={fieldRef}
-      autocomplete
+      ?autocomplete
     />
   }
 }

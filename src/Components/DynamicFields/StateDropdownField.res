@@ -26,7 +26,7 @@ let make = (~fieldConfig: fieldConfig, ~countryFieldPath: string) => {
   let defaultStateCode = Utils.getStateCodeFromStateName(defaultStateDisplayName, countryIso)
   let field = ReactFinalForm.useField(
     fieldConfig.confirmRequestWritePath,
-    ~config={validate: validate, initialValue: Some(defaultStateCode)},
+    ~config={validate, initialValue: Some(defaultStateCode)},
   )
   let storedCode = field.input.value->Option.getOr("")
 
@@ -39,8 +39,7 @@ let make = (~fieldConfig: fieldConfig, ~countryFieldPath: string) => {
     React.null
   } else {
     let displayName = Utils.getStateNameFromCode(storedCode, countryIso)
-    let effectiveDisplayName =
-      displayName !== "" ? displayName : defaultStateDisplayName
+    let effectiveDisplayName = displayName !== "" ? displayName : defaultStateDisplayName
 
     <DropdownField
       appearance={config.appearance}
