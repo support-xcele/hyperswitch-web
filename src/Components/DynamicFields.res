@@ -95,62 +95,34 @@ let make = (
   ))
 
   let missingRequiredFieldsFiltered = React.useMemo(() => {
-    let afterBillingFilter = removeBillingDetailsIfUseBillingAddress(
-      missingRequiredFields,
-      billingAddress,
-    )
-
-    let firstEmailPath =
-      afterBillingFilter
-      ->Array.filter(fieldConfig => fieldConfig.fieldRenderType === Email)
-      ->Array.toSorted((a, b) => (a.fieldDisplayOrder - b.fieldDisplayOrder)->Int.toFloat)
-      ->Array.get(0)
-      ->Option.map(fieldConfig => fieldConfig.confirmRequestWritePath)
-
-    // remove fields that would render as React.null:
-    //   - CardNumber and Cvc (rendered separately via cardProps/cvcProps)
-    //   - Any card-data fields (card_exp_month, card_exp_year, card_network, etc.)
-    //     that live under payment_method_data.card.* — handled by card iframe widgets
-    //   - Duplicate Email fields (only the first path is rendered)
-    //   - CardHolderName last_name (rendered inside the first_name field)
-    //   - Dropdown fields with no options (would render React.null anyway)
-    afterBillingFilter->Array.filter(field => {
-      switch field.fieldRenderType {
-      | CardNumber | Cvc => false
-      | Dropdown =>
-        let options = field.dropdownOptions->Option.getOr([])
-        options->Array.length > 0
-      | Email => firstEmailPath === Some(field.confirmRequestWritePath)
-      | CardHolderName => !(field.confirmRequestWritePath->String.endsWith(".last_name"))
-      | _ => !(field.confirmRequestWritePath->String.startsWith("payment_method_data.card."))
-      }
-    })
+    missingRequiredFields->removeBillingDetailsIfUseBillingAddress(billingAddress)
   }, (missingRequiredFields, billingAddress.isUseBillingAddress))
 
   let billingPrefix = "payment_method_data.billing."
 
-  let dynamicFieldsOutsideBilling = React.useMemo(() => {
-    missingRequiredFieldsFiltered->Array.filter(field =>
-      !(field.confirmRequestWritePath->String.startsWith(billingPrefix)) ||
-      field.fieldRenderType === CardHolderName
+  let elementsOutsideBilling = React.useMemo(() => {
+    missingRequiredFieldsFiltered
+    ->Array.filter(field =>
+      (
+        !(field.confirmRequestWritePath->String.startsWith(billingPrefix)) ||
+        field.fieldRenderType === CardHolderName
+      ) &&
+      field.fieldRenderType !== Email
     )
+    ->DynamicFieldInput.categorizeDynamicFields
   }, [missingRequiredFieldsFiltered])
 
-  let dynamicFieldsInsideBilling = React.useMemo(() => {
-    missingRequiredFieldsFiltered->Array.filter(field =>
-      field.confirmRequestWritePath->String.startsWith(billingPrefix) &&
+  let elementsInsideBilling = React.useMemo(() => {
+    missingRequiredFieldsFiltered
+    ->Array.filter(field =>
+      (
+        field.confirmRequestWritePath->String.startsWith(billingPrefix) &&
         field.fieldRenderType !== CardHolderName
+      ) ||
+      field.fieldRenderType === Email
     )
+    ->DynamicFieldInput.categorizeDynamicFields
   }, [missingRequiredFieldsFiltered])
-
-  // Collect all Email-type paths globally (sorted by fieldDisplayOrder) so that
-  // a single Email widget writes to all output paths.
-  // Sourced from missingRequiredFields (before dedup filtering) to preserve all write targets.
-  let allEmailPaths = React.useMemo(() => {
-    missingRequiredFields
-    ->Array.filter(fieldConfig => fieldConfig.fieldRenderType === Email)
-    ->Array.map(fieldConfig => fieldConfig.confirmRequestWritePath)
-  }, [missingRequiredFields])
 
   let formRef: React.ref<option<ReactFinalForm.Form.formMethods>> = React.useRef(None)
 
@@ -166,7 +138,8 @@ let make = (
 
   let bottomElement = <InfoElement />
   let isSpacedInnerLayout = config.appearance.innerLayout === Spaced
-  let isRenderDynamicFieldsInsideBilling = dynamicFieldsInsideBilling->Array.length > 0
+  let isRenderDynamicFieldsInsideBilling =
+    DynamicFieldInput.groupElementsByRow(elementsInsideBilling)->Array.length > 0
   let isInfoElementPresent = React.useMemo(() => {
     PaymentMethodsRecord.getPaymentMethodsFields(~localeString)
     ->Array.find(pm => pm.paymentMethodName === paymentMethodType)
@@ -177,7 +150,9 @@ let make = (
     isInfoElementPresent && !isDisableInfoElement && redirectionInfo === ShowRedirectionInfo
 
   let spacedStylesForBillingDetails = isSpacedInnerLayout ? "p-2" : "my-2"
-  let hasAnyField = missingRequiredFieldsFiltered->Array.length > 0
+  let hasAnyField =
+    DynamicFieldInput.groupElementsByRow(elementsOutsideBilling)->Array.length > 0 ||
+    DynamicFieldInput.groupElementsByRow(elementsInsideBilling)->Array.length > 0
   let setAreRequiredFieldsValid = Recoil.useSetRecoilState(areRequiredFieldsValid)
 
   <>
@@ -201,15 +176,11 @@ let make = (
           )
 
           <>
-            {DynamicFieldInput.groupFieldsByRow(dynamicFieldsOutsideBilling)
+            {DynamicFieldInput.groupElementsByRow(elementsOutsideBilling)
             ->Array.mapWithIndex((row, rowIdx) => {
               <DynamicFieldsToRenderWrapper
                 key={`outside-row-${rowIdx->Int.toString}`} index={rowIdx} isInside={false}>
-                <DynamicFieldInput.makeRow
-                  fields={row}
-                  allFields={dynamicFieldsOutsideBilling}
-                  globalEmailPaths={allEmailPaths}
-                />
+                <DynamicFieldInput.makeRow fields={row} />
               </DynamicFieldsToRenderWrapper>
             })
             ->React.array}
@@ -234,15 +205,11 @@ let make = (
                   style={
                     gap: isSpacedInnerLayout ? themeObj.spacingGridRow : "",
                   }>
-                  {DynamicFieldInput.groupFieldsByRow(dynamicFieldsInsideBilling)
+                  {DynamicFieldInput.groupElementsByRow(elementsInsideBilling)
                   ->Array.mapWithIndex((row, rowIdx) => {
                     <DynamicFieldsToRenderWrapper
                       key={`inside-row-${rowIdx->Int.toString}`} index={rowIdx}>
-                      <DynamicFieldInput.makeRow
-                        fields={row}
-                        allFields={dynamicFieldsInsideBilling}
-                        globalEmailPaths={allEmailPaths}
-                      />
+                      <DynamicFieldInput.makeRow fields={row} />
                     </DynamicFieldsToRenderWrapper>
                   })
                   ->React.array}
@@ -255,7 +222,7 @@ let make = (
       />
     </RenderIf>
     <RenderIf condition={isRenderInfoElement}>
-      {if missingRequiredFieldsFiltered->Array.length >= 1 {
+      {if hasAnyField {
         bottomElement
       } else {
         <Block bottomElement />

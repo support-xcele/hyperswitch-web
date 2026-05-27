@@ -30,9 +30,22 @@ let make = (~fieldConfig: SuperpositionTypes.fieldConfig) => {
   let dateFormat = fieldConfig.inputFormatPattern->Option.getOr("dd-MM-yyyy")
   let (selectedDate, setSelectedDate) = React.useState(() => Nullable.null)
 
-  let validate = DynamicFieldsUtils.resolveValidator(~field=fieldConfig, ~localeObject=localeString)
-
-  <ReactFinalForm.Field name={path} validate={Some(validate)}>
+  <ReactFinalForm.Field
+    name={path}
+    validate={Some(
+      val => {
+        let date = val->Option.map(Date.fromString)
+        switch date {
+        | Some(date) =>
+          if date->Utils.checkIs18OrAbove {
+            None
+          } else {
+            Some(localeString.dateOfBirthInvalidText)
+          }
+        | None => Some(localeString.dateofBirthRequiredText)
+        }
+      },
+    )}>
     {(field: ReactFinalForm.Field.fieldProps) => {
       let touched = field.meta.touched
       let invalid = field.meta.invalid

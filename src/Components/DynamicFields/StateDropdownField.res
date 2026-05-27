@@ -1,10 +1,10 @@
 open SuperpositionTypes
 
 @react.component
-let make = (~field: fieldConfig, ~countryFieldPath: string) => {
+let make = (~fieldConfig: fieldConfig, ~countryFieldPath: string) => {
   let {config, localeString} = Recoil.useRecoilValueFromAtom(RecoilAtoms.configAtom)
-  let {label} = DynamicFieldsUtils.resolveFieldTexts(~field, ~localeObject=localeString)
-  let validate = DynamicFieldsUtils.resolveValidator(~field, ~localeObject=localeString)
+  let {label} = DynamicFieldsUtils.resolveFieldTexts(~field=fieldConfig, ~localeObject=localeString)
+  let validate = DynamicFieldsUtils.resolveValidator(~field=fieldConfig, ~localeObject=localeString)
   let defaultCountryIso = Recoil.useRecoilValueFromAtom(RecoilAtoms.userCountry)
   let countryFieldProps = ReactFinalForm.useField(countryFieldPath)
   let rffCountryIso = countryFieldProps.input.value->Option.getOr("")
@@ -22,15 +22,25 @@ let make = (~field: fieldConfig, ~countryFieldPath: string) => {
   })
 
   let stateOptions = stateDisplayNames->DropdownField.updateArrayOfStringToOptionsTypeArray
-  let field = ReactFinalForm.useField(field.confirmRequestWritePath, ~config={validate: validate})
+  let defaultStateDisplayName = stateDisplayNames->Array.get(0)->Option.getOr("")
+  let defaultStateCode = Utils.getStateCodeFromStateName(defaultStateDisplayName, countryIso)
+  let field = ReactFinalForm.useField(
+    fieldConfig.confirmRequestWritePath,
+    ~config={validate: validate, initialValue: Some(defaultStateCode)},
+  )
   let storedCode = field.input.value->Option.getOr("")
+
+  React.useEffect(() => {
+    field.input.onChange(defaultStateCode)
+    None
+  }, [countryIso])
 
   if stateOptions->Array.length === 0 {
     React.null
   } else {
     let displayName = Utils.getStateNameFromCode(storedCode, countryIso)
     let effectiveDisplayName =
-      displayName !== "" ? displayName : stateDisplayNames->Array.get(0)->Option.getOr("")
+      displayName !== "" ? displayName : defaultStateDisplayName
 
     <DropdownField
       appearance={config.appearance}

@@ -1,9 +1,8 @@
 open SuperpositionTypes
 
 @react.component
-let make = (~networkField: fieldConfig, ~currencyField: fieldConfig) => {
+let make = (~networkField: fieldConfig, ~currencyFieldPath: string) => {
   let networkPath = networkField.confirmRequestWritePath
-  let currencyFieldPath = currencyField.confirmRequestWritePath
   let {config, localeString} = Recoil.useRecoilValueFromAtom(RecoilAtoms.configAtom)
   let {label} = DynamicFieldsUtils.resolveFieldTexts(
     ~field=networkField,

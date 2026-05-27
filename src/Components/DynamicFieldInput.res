@@ -1,20 +1,102 @@
 open SuperpositionTypes
 
-// Groups an array of fieldConfig by layoutRowId.
-// Fields with no layoutRowId each form their own singleton row.
-let groupFieldsByRow = (fields: array<fieldConfig>): array<array<fieldConfig>> => {
-  let rows: array<array<fieldConfig>> = []
-  let rowMap: Dict.t<array<fieldConfig>> = Dict.make()
+type dynamicFieldElement =
+  | Card(array<fieldConfig>)
+  | FullName(fieldConfig, fieldConfig)
+  | Email(array<fieldConfig>)
+  | Generic(fieldConfig)
+
+let elementPrimaryField = element =>
+  switch element {
+  | Card(fields) => fields->Array.get(0)
+  | FullName(first, _) => Some(first)
+  | Email(fields) => fields->Array.get(0)
+  | Generic(field) => Some(field)
+  }
+
+let categorizeDynamicFields = (fields: array<fieldConfig>): array<dynamicFieldElement> => {
+  let cardFields = []
+  let cardHolderNameFields = []
+  let emailFields = []
+  let generics = []
 
   fields->Array.forEach(field => {
-    switch field.layoutRowId {
-    | None => rows->Array.push([field])
-    | Some(rowId) =>
-      switch rowMap->Dict.get(rowId) {
-      | Some(row) => row->Array.push(field)
+    let path = field.confirmRequestWritePath
+    switch field.fieldRenderType {
+    | CardNumber | Cvc => cardFields->Array.push(field)
+    | _ when path->String.startsWith("payment_method_data.card.") => cardFields->Array.push(field)
+    | CardHolderName => cardHolderNameFields->Array.push(field)
+    | Email => emailFields->Array.push(field)
+    | Dropdown when field.dropdownOptions === None => ()
+    | _ => generics->Array.push(Generic(field))
+    }
+  })
+
+  let result: array<dynamicFieldElement> = []
+
+  // Card
+  if cardFields->Array.length > 0 {
+    result->Array.push(Card(cardFields))
+  }
+
+  // FullName / Generic fallback
+  let firstNameField = cardHolderNameFields->Array.find(field =>
+    field.confirmRequestWritePath->String.endsWith(".first_name")
+  )
+  let lastNameField = cardHolderNameFields->Array.find(field =>
+    field.confirmRequestWritePath->String.endsWith(".last_name")
+  )
+  switch (firstNameField, lastNameField) {
+  | (Some(first), Some(last)) => result->Array.push(FullName(first, last))
+  | (Some(first), None) => result->Array.push(Generic(first))
+  | (None, Some(last)) => result->Array.push(Generic(last))
+  | (None, None) => ()
+  }
+
+  // Email
+  if emailFields->Array.length > 0 {
+    let sorted =
+      emailFields->Array.toSorted((a, b) => (a.fieldDisplayOrder - b.fieldDisplayOrder)->Int.toFloat)
+    result->Array.push(Email(sorted))
+  }
+
+  // Generics (already constructed as Generic(...))
+  generics->Array.forEach(element => result->Array.push(element))
+
+  // Sort all by fieldDisplayOrder of primary field
+  result->Array.toSorted((a, b) => {
+    let orderA =
+      elementPrimaryField(a)->Option.map(field => field.fieldDisplayOrder)->Option.getOr(999)
+    let orderB =
+      elementPrimaryField(b)->Option.map(field => field.fieldDisplayOrder)->Option.getOr(999)
+    (orderA - orderB)->Int.toFloat
+  })
+}
+
+// Groups an array of dynamicFieldElement by layoutRowId of the primary field.
+// Elements with no layoutRowId each form their own singleton row.
+let groupElementsByRow = (elements: array<dynamicFieldElement>): array<array<dynamicFieldElement>> => {
+  let rows: array<array<dynamicFieldElement>> = []
+  let rowMap: Dict.t<array<dynamicFieldElement>> = Dict.make()
+
+  // Card elements handled in CardPayment.res 
+  let renderableElements = elements->Array.filter(element =>
+    switch element {
+    | Card(_) => false
+    | _ => true
+    }
+  )
+
+  renderableElements->Array.forEach(element => {
+    let rowId = elementPrimaryField(element)->Option.flatMap(field => field.layoutRowId)
+    switch rowId {
+    | None => rows->Array.push([element])
+    | Some(id) =>
+      switch rowMap->Dict.get(id) {
+      | Some(row) => row->Array.push(element)
       | None =>
-        let row = [field]
-        rowMap->Dict.set(rowId, row)
+        let row = [element]
+        rowMap->Dict.set(id, row)
         rows->Array.push(row)
       }
     }
@@ -23,169 +105,96 @@ let groupFieldsByRow = (fields: array<fieldConfig>): array<array<fieldConfig>> =
   rows
 }
 
-// Renders a single fieldConfig entry as a RFF-connected input.
-let renderSingleField = (
-  field: fieldConfig,
-  ~allFields: array<fieldConfig>,
-  ~fieldRef: React.ref<Nullable.t<'a>>,
-  ~globalEmailPaths: option<array<string>>=?,
-) => {
-  switch field.fieldRenderType {
-  | CardNumber
-  | Cvc => React.null
+// Renders a single dynamicFieldElement as a RFF-connected input.
+let renderElement = (element: dynamicFieldElement, ~fieldRef: React.ref<Nullable.t<'a>>) => {
+  switch element {
+  | Card(_) => React.null
 
-  | CardHolderName =>
-    // last_name is rendered as part of the first_name field — skip it here
-    if field.confirmRequestWritePath->String.endsWith(".last_name") {
-      React.null
-    } else {
-      let lastNameField =
-        allFields->Array.find(f =>
-          f.fieldRenderType === CardHolderName &&
-            f.confirmRequestWritePath->String.endsWith(".last_name")
-        )
-      switch lastNameField {
-      | Some(lastNameField) => <CardHolderNameField firstNameField=field lastNameField />
-      | None =>
-        // No separate last_name field — render as a plain Generic input
-        let {localeString} = Recoil.useRecoilValueFromAtom(RecoilAtoms.configAtom)
-        let {label, placeholder} = DynamicFieldsUtils.resolveFieldTexts(
-          ~field,
-          ~localeObject=localeString,
-        )
-        let autocomplete = field.htmlAutocompleteAttribute->Option.getOr("cc-name")
-        let validate = DynamicFieldsUtils.resolveValidator(~field, ~localeObject=localeString)
-        <ReactFinalForm.Field name={field.confirmRequestWritePath} validate={Some(validate)}>
-          {(fieldProps: ReactFinalForm.Field.fieldProps) => {
-            let {input, meta} = fieldProps
-            let value = input.value->Option.getOr("")
-            let isValid = if meta.touched {
-              Some(meta.valid)
-            } else {
-              None
-            }
-            let errorString = if meta.touched && meta.invalid {
-              meta.error->Option.getOr("")
-            } else {
-              ""
-            }
-            <PaymentInputField
-              fieldName={label}
-              value
-              onChange={ev => input.onChange(ReactEvent.Form.target(ev)["value"])}
-              onBlur={_ev => input.onBlur()}
-              isValid
-              errorString
-              placeholder
-              inputRef={fieldRef}
-              autocomplete
-              maxLength=?{field.maxInputLength}
-            />
-          }}
-        </ReactFinalForm.Field>
-      }
-    }
+  | FullName(first, last) => <CardHolderNameField firstNameField=first lastNameField=last />
 
-  | Email =>
-    let allEmailPaths = switch globalEmailPaths {
-    | Some(paths) => paths
-    | None => []
-    }
-    let firstEmailPath = allEmailPaths->Array.get(0)
-    if firstEmailPath !== Some(field.confirmRequestWritePath) {
-      React.null
-    } else {
-      <EmailField fieldConfig=field paths=allEmailPaths />
-    }
+  | Email(fields) =>
+    let paths = fields->Array.map(f => f.confirmRequestWritePath)
+    <EmailField fieldConfig={fields->Array.getUnsafe(0)} paths />
 
-  | Date => <DateOfBirth fieldConfig=field />
+  | Generic(field) =>
+    switch field.fieldRenderType {
+    | Phone => <PhoneField fieldConfig=field />
 
-  | Generic =>
-    let {localeString} = Recoil.useRecoilValueFromAtom(RecoilAtoms.configAtom)
-    let {label, placeholder} = DynamicFieldsUtils.resolveFieldTexts(
-      ~field,
-      ~localeObject=localeString,
-    )
-    let autocomplete = field.htmlAutocompleteAttribute->Option.getOr("on")
-    let validate = DynamicFieldsUtils.resolveValidator(~field, ~localeObject=localeString)
+    | Date => <DateOfBirth fieldConfig=field />
 
-    <ReactFinalForm.Field name={field.confirmRequestWritePath} validate={Some(validate)}>
-      {(fieldProps: ReactFinalForm.Field.fieldProps) => {
-        let {input, meta} = fieldProps
-        let value = input.value->Option.getOr("")
-        let isValid = if meta.touched {
-          Some(meta.valid)
-        } else {
-          None
-        }
-        let errorString = if meta.touched && meta.invalid {
-          meta.error->Option.getOr("")
-        } else {
-          ""
-        }
-        <PaymentInputField
-          fieldName={label}
-          value
-          onChange={ev => input.onChange(ReactEvent.Form.target(ev)["value"])}
-          onBlur={_ev => input.onBlur()}
-          isValid
-          errorString
-          placeholder
-          inputRef={fieldRef}
-          autocomplete
-          maxLength=?{field.maxInputLength}
-        />
-      }}
-    </ReactFinalForm.Field>
-
-  | Dropdown =>
-    if field.confirmRequestWritePath->String.endsWith(".state") {
-      let countryFieldPath = field.confirmRequestWritePath->String.replace(".state", ".country")
-      <StateDropdownField field countryFieldPath />
-    } else if field.confirmRequestWritePath->String.endsWith(".country") {
-      let isoCodes = field.dropdownOptions->Option.getOr([])
-      let options =
-        isoCodes
-        ->Utils.isoOptionsToCountryNames
-        ->DropdownField.updateArrayOfStringToOptionsTypeArray
-      if options->Array.length === 0 {
-        React.null
-      } else {
+    | Dropdown =>
+      if field.confirmRequestWritePath->String.endsWith(".state") {
+        let countryFieldPath =
+          field.confirmRequestWritePath->String.replace(".state", ".country")
+        <StateDropdownField fieldConfig=field countryFieldPath />
+      } else if field.confirmRequestWritePath->String.endsWith(".country") {
+        let isoCodes = field.dropdownOptions->Option.getOr([])
+        let options =
+          isoCodes
+          ->Utils.isoOptionsToCountryNames
+          ->DropdownField.updateArrayOfStringToOptionsTypeArray
         <CountryDropdownField fieldConfig=field options />
-      }
-    } else if field.confirmRequestWritePath->String.endsWith(".country_code") {
-      <PhoneCountryCodeDropdownField fieldConfig=field />
-    } else if field.confirmRequestWritePath->String.endsWith("crypto.network") {
-      let currencyField =
-        allFields->Array.find(f =>
-          f.confirmRequestWritePath->String.endsWith("crypto.pay_currency")
-        )
-      switch currencyField {
-      | None => React.null
-      | Some(currencyField) => <CryptoCurrencyNetworks networkField=field currencyField />
-      }
-    } else {
-      let options =
-        field.dropdownOptions->Option.getOr([])->DropdownField.updateArrayOfStringToOptionsTypeArray
-      if options->Array.length === 0 {
-        React.null
+      } else if field.confirmRequestWritePath->String.endsWith(".country_code") {
+        <PhoneCountryCodeDropdownField fieldConfig=field />
+      } else if field.confirmRequestWritePath->String.endsWith("crypto.network") {
+        let currencyPath =
+          field.confirmRequestWritePath->String.replace("crypto.network", "crypto.pay_currency")
+        <CryptoCurrencyNetworks networkField=field currencyFieldPath=currencyPath />
       } else {
-        let initialValue = options->Array.get(0)->Option.map(o => o.value)->Option.getOr("")
+        let options =
+          field.dropdownOptions
+          ->Option.getOr([])
+          ->DropdownField.updateArrayOfStringToOptionsTypeArray
+        let initialValue =
+          options->Array.get(0)->Option.map(o => o.value)->Option.getOr("")
         <GenericDropdownField fieldConfig=field options initialValue />
       }
-    }
 
-  | Phone => <PhoneField fieldConfig=field />
+    | CardNumber | Cvc | CardHolderName | Email => React.null // safety net — handled by dedicated elements
+
+    | Generic =>
+      let {localeString} = Recoil.useRecoilValueFromAtom(RecoilAtoms.configAtom)
+      let {label, placeholder} = DynamicFieldsUtils.resolveFieldTexts(
+        ~field,
+        ~localeObject=localeString,
+      )
+      let autocomplete = field.htmlAutocompleteAttribute->Option.getOr("on")
+      let validate = DynamicFieldsUtils.resolveValidator(~field, ~localeObject=localeString)
+      <ReactFinalForm.Field name={field.confirmRequestWritePath} validate={Some(validate)}>
+        {(fieldProps: ReactFinalForm.Field.fieldProps) => {
+          let {input, meta} = fieldProps
+          let value = input.value->Option.getOr("")
+          let isValid = if meta.touched {
+            Some(meta.valid)
+          } else {
+            None
+          }
+          let errorString = if meta.touched && meta.invalid {
+            meta.error->Option.getOr("")
+          } else {
+            ""
+          }
+          <PaymentInputField
+            fieldName={label}
+            value
+            onChange={ev => input.onChange(ReactEvent.Form.target(ev)["value"])}
+            onBlur={_ev => input.onBlur()}
+            isValid
+            errorString
+            placeholder
+            inputRef={fieldRef}
+            autocomplete
+            maxLength=?{field.maxInputLength}
+          />
+        }}
+      </ReactFinalForm.Field>
+    }
   }
 }
 
-// Renders a row of fields side-by-side using flex layout.
+// Renders a row of dynamicFieldElements side-by-side using flex layout.
 @react.component
-let makeRow = (
-  ~fields: array<fieldConfig>,
-  ~allFields: array<fieldConfig>,
-  ~globalEmailPaths: option<array<string>>=?,
-) => {
+let makeRow = (~fields: array<dynamicFieldElement>) => {
   let fieldRef = React.useRef(Nullable.null)
 
   switch fields->Array.length {
@@ -193,17 +202,26 @@ let makeRow = (
   | 1 =>
     switch fields->Array.get(0) {
     | None => React.null
-    | Some(field) => renderSingleField(field, ~allFields, ~fieldRef, ~globalEmailPaths?)
+    | Some(element) => renderElement(element, ~fieldRef)
     }
   | _ =>
     <div className="flex gap-4 w-full">
       {fields
-      ->Array.mapWithIndex((field, i) => {
-        let flex = field.layoutWidthRatio->Option.getOr(1.0)
+      ->Array.mapWithIndex((element, i) => {
+        let flex =
+          elementPrimaryField(element)
+          ->Option.flatMap(field => field.layoutWidthRatio)
+          ->Option.getOr(1.0)
+        let key =
+          elementPrimaryField(element)
+          ->Option.map(field => field.confirmRequestWritePath)
+          ->Option.getOr(i->Int.toString) ++
+          "-" ++
+          i->Int.toString
         <div
-          key={field.confirmRequestWritePath ++ "-" ++ i->Int.toString}
+          key
           style={flexGrow: flex->Float.toString, flexShrink: "1", flexBasis: "0%"}>
-          {renderSingleField(field, ~allFields, ~fieldRef, ~globalEmailPaths?)}
+          {renderElement(element, ~fieldRef)}
         </div>
       })
       ->React.array}
