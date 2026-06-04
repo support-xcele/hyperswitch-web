@@ -290,17 +290,6 @@ let resolveValidator = (
   )
 }
 
-let extractValuesFromPMLRequiredFields = (
-  requiredFields: array<PaymentMethodsRecord.required_fields>,
-) => {
-  requiredFields->Array.reduce(Dict.make(), (acc, field) => {
-    if field.required_field !== "" {
-      acc->Dict.set(field.required_field, field.value)
-    }
-    acc
-  })
-}
-
 let removeBillingDetailsIfUseBillingAddress = (
   missingRequiredFields: array<SuperpositionTypes.fieldConfig>,
   billingAddress: PaymentType.billingAddress,
@@ -643,4 +632,38 @@ let getKlarnaRequiredFields = (
 
     acc
   })
+}
+
+let applyBillingDetailsOverride = (
+  initialValues: Dict.t<JSON.t>,
+  billingDetails: PaymentType.billingDetails,
+) => {
+  let set = (path, value) =>
+    if value !== "" {
+      SuperpositionHelper.setValueAtNestedPath(
+        initialValues,
+        path->String.split("."),
+        value,
+      )->ignore
+    }
+
+  let name = billingDetails.name
+  if name !== "" {
+    let nameArr = name->String.split(" ")
+    let firstName = nameArr->Array.get(0)->Option.getOr("")
+    let lastName = nameArr->Array.sliceToEnd(~start=1)->Array.join(" ")
+    set("payment_method_data.billing.address.first_name", firstName)
+    set("payment_method_data.billing.address.last_name", lastName)
+  }
+
+  set("payment_method_data.billing.email", billingDetails.email)
+  set("payment_method_data.billing.phone.number", billingDetails.phone)
+  set("payment_method_data.billing.address.line1", billingDetails.address.line1)
+  set("payment_method_data.billing.address.line2", billingDetails.address.line2)
+  set("payment_method_data.billing.address.city", billingDetails.address.city)
+  set("payment_method_data.billing.address.state", billingDetails.address.state)
+  set("payment_method_data.billing.address.country", billingDetails.address.country)
+  set("payment_method_data.billing.address.zip", billingDetails.address.postal_code)
+
+  initialValues
 }
