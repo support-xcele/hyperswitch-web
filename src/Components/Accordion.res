@@ -41,9 +41,10 @@ let make = (
       width: "-webkit-fill-available",
       cursor: "pointer",
       marginBottom: layoutClass.spacedAccordionItems ? themeObj.spacingAccordionItem : "",
-      border: `1px solid ${themeObj.borderColor}`,
+      // glass fork: no outer card outline — the inline border (themeObj.borderColor)
+      // beats the appearance .AccordionItem rule, so it must be removed here.
+      border: "none",
       borderRadius: {borderRadiusStyle},
-      borderBottomStyle: borderBottom ? "solid" : "hidden",
     }
     onClick={_ => setSelectedOption(_ => paymentOption.paymentMethodName)}>
     <div
