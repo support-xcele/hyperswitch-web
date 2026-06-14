@@ -35,6 +35,19 @@ let make = () => {
     None
   }, [logger])
 
+  // glass fork (getmypics): force a dark color-scheme on the iframe :root.
+  // The Payment Element renders fully transparent (appearance theme:midnight +
+  // colorBackground:transparent + transparent .Block/.AccordionItem rules), but a
+  // transparent iframe whose document keeps the default `color-scheme: normal`
+  // composites on the UA's WHITE canvas — so it still paints as a white box on the
+  // buyer page. `color-scheme: dark` makes it composite transparent over the dark
+  // glass background. This is the one bit the appearance API can't reach: it must
+  // live on :root / <html>, which the rules map cannot target.
+  React.useEffect0(() => {
+    let _ = %raw(`(function(){try{document.documentElement.style.colorScheme='dark';}catch(e){}})()`)
+    None
+  })
+
   React.useEffect0(() => {
     let handleMetaDataPostMessage = (ev: Window.event) => {
       let json = ev.data->Utils.safeParse
