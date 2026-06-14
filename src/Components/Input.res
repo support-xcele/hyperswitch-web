@@ -65,8 +65,12 @@ let make = (
     <div className="flex flex-row " style={direction: direction}>
       <input
         id
+        // glass fork: drop the inline `background` so the injected `.Input`
+        // appearance rule (frosted rgba + backdrop blur) actually applies —
+        // an inline style outranks the merchant stylesheet, which is why the
+        // appearance API alone could never make the field translucent. Border
+        // literals removed for the same reason (the `.Input` rule owns it now).
         style={
-          background: themeObj.colorBackground,
           padding: themeObj.spacingUnit,
           width: "100%",
         }
@@ -76,7 +80,7 @@ let make = (
         ?onKeyDown
         ?maxLength
         ?pattern
-        className={`Input ${className} focus:outline-none transition-shadow ease-out duration-200 border border-gray-300 focus:border-[#006DF9] rounded-md text-sm`}
+        className={`Input ${className} focus:outline-none transition-shadow ease-out duration-200 rounded-md text-sm`}
         placeholder
         value
         onChange

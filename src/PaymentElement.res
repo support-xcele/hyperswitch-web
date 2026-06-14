@@ -541,7 +541,7 @@ let make = (~cardProps, ~expiryProps, ~cvcProps, ~paymentType: CardThemeType.mod
   <>
     <RenderIf condition={paymentLabel->Option.isSome}>
       <div
-        className="PaymentLabel text-2xl font-semibold text-[#151619] mb-6"
+        className="PaymentLabel text-2xl font-semibold text-white mb-6"
         role="heading"
         ariaLevel={1}>
         {paymentLabel->Option.getOr("")->React.string}
