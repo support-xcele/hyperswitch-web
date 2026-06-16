@@ -770,8 +770,20 @@ let make = (
                     options=updatedCountryNames
                   />
                 | AddressCountry(countryArr) =>
+                  // Build options with a per-row flag image (flagcdn) so the
+                  // searchable combobox can render a flag next to every country in
+                  // the list — the native <select> popup can't show flags/search.
+                  let flagFor = name =>
+                    Country.country
+                    ->Array.find(c => c.countryName === name)
+                    ->Option.map(c =>
+                      `https://flagcdn.com/24x18/${c.isoAlpha2->String.toLowerCase}.png`
+                    )
                   let updatedCountryArr =
-                    countryArr->DropdownField.updateArrayOfStringToOptionsTypeArray
+                    countryArr->Array.map(name =>
+                      ({value: name, flagUrl: ?flagFor(name)}: DropdownField.optionType)
+                    )
+                  let countryFlagUrl = flagFor(country)
                   <DropdownField
                     appearance=config.appearance
                     fieldName=localeString.countryLabel
@@ -779,6 +791,8 @@ let make = (
                     setValue=setCountry
                     disabled=false
                     options=updatedCountryArr
+                    leadingFlagUrl=?countryFlagUrl
+                    searchable=true
                   />
                 | BankList(bankArr) =>
                   let updatedBankNames =

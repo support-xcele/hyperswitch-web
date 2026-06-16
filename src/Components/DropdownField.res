@@ -2,6 +2,7 @@ type optionType = {
   value: string,
   label?: string,
   displayValue?: string,
+  flagUrl?: string,
 }
 
 let updateArrayOfStringToOptionsTypeArrayWithUpperCaseLabel = arrayOfString =>
@@ -33,6 +34,8 @@ let make = (
   ~disabled=false,
   ~className="",
   ~width="w-full",
+  ~leadingFlagUrl=?,
+  ~searchable=false,
 ) => {
   let {themeObj, localeString, config} = Recoil.useRecoilValueFromAtom(configAtom)
   let {readOnly} = Recoil.useRecoilValueFromAtom(optionAtom)
@@ -41,6 +44,11 @@ let make = (
   let (inputFocused, setInputFocused) = React.useState(_ => false)
   let {parentURL} = Recoil.useRecoilValueFromAtom(keys)
   let isSpacedInnerLayout = config.appearance.innerLayout === Spaced
+  // Custom searchable-combobox state (only used when ~searchable=true, e.g. the
+  // billing Country field — the native <select> popup can't show a search box,
+  // flags, or glass styling).
+  let (isOpen, setIsOpen) = React.useState(_ => false)
+  let (query, setQuery) = React.useState(_ => "")
 
   let handleFocus = _ => {
     setInputFocused(_ => true)
@@ -95,8 +103,143 @@ let make = (
   let inputClassStyles = isSpacedInnerLayout ? "Input" : "Input-Compressed"
 
   let cursorClass = !disabled ? "cursor-pointer" : "cursor-not-allowed"
+  // ── Searchable combobox derived values (used only when ~searchable=true) ──
+  let selectedOpt = options->Array.find(o => o.value === value)
+  let selectedLabel = switch selectedOpt {
+  | Some(o) => o.label->Option.getOr(o.value)
+  | None => value
+  }
+  let selectedFlag = selectedOpt->Option.flatMap(o => o.flagUrl)
+  let normalizedQuery = query->String.trim->String.toLowerCase
+  let filteredOptions =
+    normalizedQuery === ""
+      ? options
+      : options->Array.filter(o => {
+          let lbl = (o.label->Option.getOr(o.value))->String.toLowerCase
+          lbl->String.includes(normalizedQuery) ||
+            o.value->String.toLowerCase->String.includes(normalizedQuery)
+        })
+  let selectCountry = v => {
+    if fieldName->String.length > 0 {
+      LoggerUtils.logInputChangeInfo(fieldName, loggerState)
+    }
+    setValue(_ => v)
+    setIsOpen(_ => false)
+    setQuery(_ => "")
+  }
   <RenderIf condition={options->Array.length > 0}>
-    <div className={`flex flex-col ${width}`}>
+    {searchable
+      ? <div className={`flex flex-col ${width} relative`}>
+          <RenderIf
+            condition={fieldName->String.length > 0 &&
+            appearance.labels == Above &&
+            isSpacedInnerLayout}>
+            <div
+              className={`Label `}
+              style={
+                fontWeight: themeObj.fontWeightNormal,
+                fontSize: themeObj.fontSizeLg,
+                marginBottom: "5px",
+                opacity: "0.6",
+              }
+              ariaHidden=true>
+              {React.string(fieldName)}
+            </div>
+          </RenderIf>
+          <div className="relative" style={zIndex: isOpen ? "50" : "auto"}>
+            <button
+              type_="button"
+              disabled={readOnly || disabled}
+              onClick={_ => setIsOpen(p => !p)}
+              className={`${inputClassStyles} ${className} w-full flex items-center outline-none ${cursorClass}`}
+              style={
+                background: disabled ? disbaledBG : themeObj.colorBackground,
+                opacity: disabled ? "35%" : "",
+                padding: themeObj.spacingUnit,
+                color: themeObj.colorText,
+                width: "100%",
+                textAlign: "left",
+              }>
+              {switch selectedFlag {
+              | Some(url) =>
+                <img
+                  src=url
+                  alt=""
+                  className="rounded-sm flex-shrink-0"
+                  style={width: "22px", height: "16px", marginRight: "8px"}
+                />
+              | None => React.null
+              }}
+              <span className="truncate flex-1 min-w-0"> {React.string(selectedLabel)} </span>
+              <span className="ml-2 flex-shrink-0" style={opacity: "0.55", color: themeObj.colorText}>
+                <Icon size=10 name={"arrow-down"} />
+              </span>
+            </button>
+            <RenderIf condition={isOpen}>
+              <div
+                className="rounded-xl overflow-hidden"
+                style={
+                  marginTop: "6px",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(16,18,26,0.96)",
+                  boxShadow: "0 18px 55px rgba(0,0,0,0.5)",
+                }>
+                <input
+                  type_="text"
+                  value={query}
+                  placeholder="Search"
+                  autoFocus=true
+                  onChange={ev => {
+                    let v = (ev->ReactEvent.Form.target)["value"]
+                    setQuery(_ => v)
+                  }}
+                  onKeyDown={ev =>
+                    if (ev->ReactEvent.Keyboard.key) === "Escape" {
+                      setIsOpen(_ => false)
+                    }}
+                  className="outline-none block"
+                  style={
+                    margin: "8px",
+                    padding: "11px 13px",
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    borderRadius: "10px",
+                    color: "#ffffff",
+                    fontSize: themeObj.fontSizeLg,
+                    width: "calc(100% - 16px)",
+                  }
+                />
+                <div className="overflow-y-auto" style={maxHeight: "240px", padding: "0 6px 8px"}>
+                  {filteredOptions
+                  ->Array.mapWithIndex((item, index) =>
+                    <div
+                      key={Int.toString(index)}
+                      className="flex items-center rounded-lg cursor-pointer"
+                      onClick={_ => selectCountry(item.value)}
+                      style={padding: "11px 10px", color: "rgba(255,255,255,0.9)"}>
+                      {switch item.flagUrl {
+                      | Some(url) =>
+                        <img
+                          src=url
+                          alt=""
+                          className="rounded-sm flex-shrink-0"
+                          style={width: "22px", height: "16px", marginRight: "9px"}
+                        />
+                      | None => React.null
+                      }}
+                      {React.string(item.label->Option.getOr(item.value))}
+                    </div>
+                  )
+                  ->React.array}
+                </div>
+              </div>
+            </RenderIf>
+          </div>
+          <RenderIf condition={isOpen}>
+            <div className="fixed inset-0" style={zIndex: "40"} onClick={_ => setIsOpen(_ => false)} />
+          </RenderIf>
+        </div>
+      : <div className={`flex flex-col ${width}`}>
       <RenderIf
         condition={fieldName->String.length > 0 &&
         appearance.labels == Above &&
@@ -114,6 +257,22 @@ let make = (
         </div>
       </RenderIf>
       <div className="relative">
+        {switch leadingFlagUrl {
+        | Some(url) =>
+          <img
+            src=url
+            alt=""
+            className="absolute z-20 pointer-events-none"
+            style={
+              left: "12px",
+              top: "calc(50% - 8px)",
+              width: "22px",
+              height: "16px",
+              borderRadius: "3px",
+            }
+          />
+        | None => React.null
+        }}
         <RenderIf condition={isDisplayValueVisible && displayValue->Option.isSome}>
           <div
             className="absolute top-[2px] left-[2px] right-0 bottom-[2px]  pointer-events-none rounded-sm z-20 whitespace-nowrap"
@@ -134,6 +293,7 @@ let make = (
             opacity: disabled ? "35%" : "",
             padding: themeObj.spacingUnit,
             paddingRight: "22px",
+            paddingLeft: {leadingFlagUrl->Option.isSome ? "42px" : ""},
             width: "100%",
           }
           name=""
@@ -179,6 +339,6 @@ let make = (
           <Icon size=10 name={"arrow-down"} />
         </div>
       </div>
-    </div>
+    </div>}
   </RenderIf>
 }

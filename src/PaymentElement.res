@@ -637,6 +637,5 @@ let make = (~cardProps, ~expiryProps, ~cvcProps, ~paymentType: CardThemeType.mod
         <PayNowButton />
       </div>
     </RenderIf>
-    <PoweredBy />
   </>
 }

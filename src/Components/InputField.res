@@ -130,7 +130,6 @@ let make = (
       <input
         id
         style={
-          background: "transparent",
           width: "-webkit-fill-available",
           color: textColor,
         }

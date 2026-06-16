@@ -60,12 +60,6 @@ let make = (
     Utils.handleOnBlurPostMessage(~targetOrigin=parentURL)
   }
 
-  let backgroundClass = switch paymentType {
-  | Payment
-  | PaymentMethodsManagement =>
-    themeObj.colorBackground
-  | _ => "transparent"
-  }
   let direction = if type_ == "password" || type_ == "tel" {
     "ltr"
   } else {
@@ -157,7 +151,8 @@ let make = (
         <div className="relative w-full">
           <input
             style={
-              background: backgroundClass,
+              // glass fork: no inline background — let the `.Input` appearance
+              // rule own the frosted translucent fill (inline beats the rule).
               padding: themeObj.spacingUnit,
               width: "100%",
             }
