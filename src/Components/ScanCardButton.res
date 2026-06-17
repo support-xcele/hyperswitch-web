@@ -36,7 +36,9 @@ let make = (
       })
       ->Promise.catch(_err => {
         setScanning(_ => false)
-        setErrorMsg(_ => "Card scan isn't available here — please type your details.")
+        // Most common cause: an in-app browser (Telegram/IG/etc.) blocks the
+        // camera; the scan works in a real browser. Guide there, else type.
+        setErrorMsg(_ => "Couldn't scan here — tap “Open in browser” above, or type your card.")
         Promise.resolve()
       })
       ->ignore

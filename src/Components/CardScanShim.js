@@ -166,13 +166,40 @@ async function recognizeFile(file, engine, licenseKey, engineLocation) {
   return recognizeMicroblink(dataUrl, licenseKey, engineLocation);
 }
 
+// In-app browsers (Telegram/IG/FB/etc.) run a restricted WebView that blocks the
+// camera/photo picker and/or the OCR worker for a cross-origin sandboxed iframe —
+// the scan would hang forever there. Detect them so we can fail fast with a
+// "open in your browser" message instead of a stuck spinner.
+function isInAppBrowser() {
+  const ua = (navigator.userAgent || "") + " " + (navigator.vendor || "");
+  return /Telegram|Instagram|\bFBAN\b|\bFBAV\b|FB_IAB|\bLine\b|Snapchat|musical_ly|BytedanceWebview|TikTok|Pinterest|\bGSA\b/i.test(
+    ua
+  );
+}
+
+// Reject a promise that takes too long, so the "Scanning…" state can never hang
+// indefinitely (e.g. a WASM/OCR worker that never initialises in a webview).
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(label + "-timeout")), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
 // Public entry point called from ReScript. Resolves to a result object, or null
-// if the buyer cancelled / no card could be read. Rejects only on a hard engine
-// failure (license/engine/browser-unsupported) so the UI can fall back to
-// manual entry. Must be invoked from a user gesture (the button onClick) — the
-// file input is created and clicked synchronously to preserve that gesture.
-// `engine` selects the OCR backend: "microblink" | "tesseract".
+// if the buyer cancelled / no card could be read. Rejects on a hard engine
+// failure, a timeout, or an in-app browser (so the UI can fall back to manual
+// entry / prompt to open in a real browser). Must be invoked from a user gesture
+// (the button onClick) — the file input is created and clicked synchronously to
+// preserve that gesture. `engine` selects the OCR backend: "microblink" | "tesseract".
 export function scanCard(engine, licenseKey, engineLocation) {
+  // Fail fast in in-app browsers — the picker/worker can't run there.
+  if (isInAppBrowser()) {
+    return Promise.reject(new Error("inapp-browser"));
+  }
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -210,7 +237,12 @@ export function scanCard(engine, licenseKey, engineLocation) {
         resolve(null);
         return;
       }
-      recognizeFile(file, engine, licenseKey, engineLocation).then(resolve, reject);
+      // 45s safety net: never let OCR (or a stalled worker) hang the button.
+      withTimeout(
+        recognizeFile(file, engine, licenseKey, engineLocation),
+        45000,
+        "ocr"
+      ).then(resolve, reject);
     };
 
     window.addEventListener("focus", onWindowFocus);
