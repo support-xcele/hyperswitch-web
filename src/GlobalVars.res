@@ -15,3 +15,9 @@ let targetOrigin: string = "*"
 @val external isSandbox: bool = "isSandboxEnv"
 @val external isProd: bool = "isProductionEnv"
 @val external isLocal: bool = "isLocal"
+// Microblink BlinkCard license key (FQDN-locked to the hs-web origin), baked at
+// build time. Empty string => the "Scan card" button is not rendered.
+@val external microblinkLicenseKey: string = "microblink_license_key"
+// Card-scan OCR engine selector, baked at build time: "tesseract" | "microblink"
+// | "" (off). Empty string => the "Scan card" button is not rendered.
+@val external cardScanEngine: string = "card_scan_engine"

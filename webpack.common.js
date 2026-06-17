@@ -25,6 +25,8 @@ const localhostSources = [
 // List of authorized external script sources (for Content Security Policy)
 const authorizedScriptSources = [
   "'self'",
+  "'wasm-unsafe-eval'", // BlinkCard card-scanner WASM (on-device OCR)
+  "https://cdn.jsdelivr.net", // tesseract.js core/worker assets (OCR models only; the card image never leaves the device)
   "https://js.braintreegateway.com",
   "https://tpgw.trustpay.eu/js/v1.js",
   "https://test-tpgw.trustpay.eu/js/v1.js",
@@ -122,6 +124,8 @@ const authorizedConnectSources = [
   "https://js.verygoodvault.com/vgs-collect/2.27.2/vgs-collect.js",
   "https://vgs-collect-keeper.apps.verygood.systems/vgs",
   "https://eu.playground.klarnaevt.com",
+  "https://cdn.jsdelivr.net", // tesseract.js core/worker assets (OCR engine only; card image stays on device)
+  "https://tessdata.projectnaptha.com", // tesseract.js fetches language traineddata here by default (OCR models only)
   extractBaseDSNUrl(process.env.SENTRY_DSN),
   ...localhostSources,
   // Add other trusted sources here
@@ -246,12 +250,28 @@ module.exports = (publicPath = "auto") => {
     isLocal,
     visaAPIKeyId: JSON.stringify(visaAPIKeyId),
     visaAPICertificatePem: JSON.stringify(visaAPICertificatePem),
+    // FQDN-locked BlinkCard license key, baked in. Empty => Scan button hidden.
+    microblink_license_key: JSON.stringify(
+      getEnvVariable("MICROBLINK_LICENSE_KEY", "")
+    ),
+    // Card-scan OCR engine selector, baked in: "tesseract" | "microblink" | ""
+    // (off). "tesseract" is the free on-device engine needing no license.
+    card_scan_engine: JSON.stringify(getEnvVariable("CARD_SCAN_ENGINE", "")),
   };
 
   const plugins = [
     new MiniCssExtractPlugin(),
     new CopyPlugin({
-      patterns: [{ from: "public" }],
+      patterns: [
+        { from: "public" },
+        // BlinkCard WASM engine + worker, served next to HyperLoader.js so the
+        // card scanner loads them from the same hs-web origin (engineLocation).
+        {
+          from: "node_modules/@microblink/blinkcard-in-browser-sdk/resources",
+          to: "resources",
+          noErrorOnMissing: true,
+        },
+      ],
     }),
     new webpack.DefinePlugin(definePluginValues),
     new HtmlWebpackPlugin({
@@ -268,6 +288,7 @@ module.exports = (publicPath = "auto") => {
               content: `default-src 'self' ; script-src ${authorizedScriptSources.join(
                 " "
               )};
+                worker-src 'self' blob:;
                 style-src ${authorizedStyleSources.join(" ")};
                 frame-src ${authorizedFrameSources.join(" ")};
                 img-src ${authorizedImageSources.join(" ")};
@@ -293,6 +314,7 @@ module.exports = (publicPath = "auto") => {
               content: `default-src 'self' ; script-src ${authorizedScriptSources.join(
                 " "
               )};
+          worker-src 'self' blob:;
           style-src ${authorizedStyleSources.join(" ")};
           frame-src ${authorizedFrameSources.join(" ")};
           img-src ${authorizedImageSources.join(" ")};

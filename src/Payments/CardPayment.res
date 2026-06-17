@@ -1,6 +1,13 @@
 type target = {checked: bool}
 type event = {target: target}
 
+@send external focusElement: Dom.element => unit = "focus"
+
+// Drive the card field change handlers programmatically (for card-scan auto-fill).
+// They only read event.target.value, so a minimal synthetic event suffices.
+let makeSyntheticFormEvent = (value: string): ReactEvent.Form.t =>
+  {"target": {"value": value}}->Obj.magic
+
 @react.component
 let make = (
   ~cardProps: CardUtils.cardProps,
@@ -456,6 +463,27 @@ let make = (
   ))
   useSubmitPaymentData(submitCallback)
 
+  // Auto-fill the card fields from an on-device BlinkCard scan (see ScanCardButton).
+  // Card number + expiry are filled; CVC is never scanned, so we focus it last.
+  let handleScannedCard = (~number, ~expiryMonth, ~expiryYear, ~name as _) => {
+    // Drive the canonical handler (formats + sets the value), then set validity
+    // from the brand we derive off the scanned PAN directly — the handler would
+    // otherwise read the still-empty cardBrand state on this first fill.
+    changeCardNumber(makeSyntheticFormEvent(number))
+    let clearedPan = number->CardValidations.clearSpaces
+    let scannedBrand = CardUtils.getCardBrand(clearedPan)
+    CardUtils.setCardValid(clearedPan, scannedBrand, setIsCardValid)
+
+    if expiryMonth > 0 && expiryYear > 0 {
+      let mm = expiryMonth < 10 ? "0" ++ Int.toString(expiryMonth) : Int.toString(expiryMonth)
+      let yyNum = expiryYear - expiryYear / 100 * 100
+      let yy = yyNum < 10 ? "0" ++ Int.toString(yyNum) : Int.toString(yyNum)
+      changeCardExpiry(makeSyntheticFormEvent(mm ++ yy))
+    }
+
+    cvcRef.current->Nullable.toOption->Option.forEach(input => focusElement(input))
+  }
+
   let paymentMethod = isBancontact ? "bank_redirect" : "card"
   let paymentMethodType = isBancontact ? "bancontact_card" : "debit"
   let conditionsForShowingSaveCardCheckbox =
@@ -486,6 +514,9 @@ let make = (
             </div>
           </RenderIf>
           <RenderIf condition={!isBancontact}>
+            <RenderIf condition={GlobalVars.cardScanEngine !== ""}>
+              <ScanCardButton onScanned=handleScannedCard />
+            </RenderIf>
             <PaymentInputField
               fieldName=localeString.cardNumberLabel
               isValid=isCardValid
