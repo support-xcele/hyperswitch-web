@@ -1,3 +1,16 @@
+// Country name -> ISO alpha-2 -> flagcdn flag image. Shared by every country
+// DropdownField call site so the searchable combobox shows a flag per row and
+// a leading flag on the selected value.
+let flagUrlForCountry = name =>
+  Country.country
+  ->Array.find(c => c.countryName === name)
+  ->Option.map(c => `https://flagcdn.com/24x18/${c.isoAlpha2->String.toLowerCase}.png`)
+
+let countryOptionsWithFlags = countryArr =>
+  countryArr->Array.map(name =>
+    ({value: name, flagUrl: ?flagUrlForCountry(name)}: DropdownField.optionType)
+  )
+
 module DynamicFieldsToRenderWrapper = {
   @react.component
   let make = (~children, ~index, ~isInside=true) => {
@@ -625,8 +638,8 @@ let make = (
                     </RenderIf>
                   </div>
                 | CountryAndPincode(countryArr) =>
-                  let updatedCountryArray =
-                    countryArr->DropdownField.updateArrayOfStringToOptionsTypeArray
+                  let updatedCountryArray = countryOptionsWithFlags(countryArr)
+                  let selectedCountryFlag = flagUrlForCountry(country)
                   <div className={`flex ${isSpacedInnerLayout ? "gap-4" : ""}`}>
                     <DropdownField
                       appearance=config.appearance
@@ -635,6 +648,8 @@ let make = (
                       setValue=setCountry
                       disabled=false
                       options=updatedCountryArray
+                      leadingFlagUrl=?selectedCountryFlag
+                      searchable=true
                       className={isSpacedInnerLayout ? "" : "!border-t-0 !border-r-0"}
                     />
                     <PaymentField
@@ -759,8 +774,8 @@ let make = (
                   />
                 | BlikCode => <BlikCodePaymentInput />
                 | Country =>
-                  let updatedCountryNames =
-                    countryNames->DropdownField.updateArrayOfStringToOptionsTypeArray
+                  let updatedCountryNames = countryOptionsWithFlags(countryNames)
+                  let selectedCountryFlag = flagUrlForCountry(country)
                   <DropdownField
                     appearance=config.appearance
                     fieldName=localeString.countryLabel
@@ -768,22 +783,14 @@ let make = (
                     setValue=setCountry
                     disabled=false
                     options=updatedCountryNames
+                    leadingFlagUrl=?selectedCountryFlag
+                    searchable=true
                   />
                 | AddressCountry(countryArr) =>
-                  // Build options with a per-row flag image (flagcdn) so the
-                  // searchable combobox can render a flag next to every country in
-                  // the list — the native <select> popup can't show flags/search.
-                  let flagFor = name =>
-                    Country.country
-                    ->Array.find(c => c.countryName === name)
-                    ->Option.map(c =>
-                      `https://flagcdn.com/24x18/${c.isoAlpha2->String.toLowerCase}.png`
-                    )
-                  let updatedCountryArr =
-                    countryArr->Array.map(name =>
-                      ({value: name, flagUrl: ?flagFor(name)}: DropdownField.optionType)
-                    )
-                  let countryFlagUrl = flagFor(country)
+                  // Per-row flag image (flagcdn) so the searchable combobox shows
+                  // a flag next to every country — the native <select> can't.
+                  let updatedCountryArr = countryOptionsWithFlags(countryArr)
+                  let selectedCountryFlag = flagUrlForCountry(country)
                   <DropdownField
                     appearance=config.appearance
                     fieldName=localeString.countryLabel
@@ -791,7 +798,7 @@ let make = (
                     setValue=setCountry
                     disabled=false
                     options=updatedCountryArr
-                    leadingFlagUrl=?countryFlagUrl
+                    leadingFlagUrl=?selectedCountryFlag
                     searchable=true
                   />
                 | BankList(bankArr) =>
