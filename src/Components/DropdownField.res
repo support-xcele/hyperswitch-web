@@ -3,6 +3,8 @@ type optionType = {
   label?: string,
   displayValue?: string,
   flagUrl?: string,
+  // Extra lowercase search text (name + ISO codes + aliases) for searchable mode.
+  keywords?: string,
 }
 
 let updateArrayOfStringToOptionsTypeArrayWithUpperCaseLabel = arrayOfString =>
@@ -111,14 +113,24 @@ let make = (
   }
   let selectedFlag = selectedOpt->Option.flatMap(o => o.flagUrl)
   let normalizedQuery = query->String.trim->String.toLowerCase
+  let optionNameText = o => (o.label->Option.getOr(o.value))->String.toLowerCase
+  // Search against keywords (name + ISO codes + aliases like "america"/"usa")
+  // when present, else just the visible name.
+  let optionSearchText = o =>
+    switch o.keywords {
+    | Some(k) => k
+    | None => optionNameText(o)
+    }
   let filteredOptions =
-    normalizedQuery === ""
-      ? options
-      : options->Array.filter(o => {
-          let lbl = (o.label->Option.getOr(o.value))->String.toLowerCase
-          lbl->String.includes(normalizedQuery) ||
-            o.value->String.toLowerCase->String.includes(normalizedQuery)
-        })
+    if normalizedQuery === "" {
+      options
+    } else {
+      let matched = options->Array.filter(o => optionSearchText(o)->String.includes(normalizedQuery))
+      // Rank names that START with the query above mere substring/alias matches.
+      let prefix = matched->Array.filter(o => optionNameText(o)->String.startsWith(normalizedQuery))
+      let rest = matched->Array.filter(o => !(optionNameText(o)->String.startsWith(normalizedQuery)))
+      Array.concat(prefix, rest)
+    }
   let selectCountry = v => {
     if fieldName->String.length > 0 {
       LoggerUtils.logInputChangeInfo(fieldName, loggerState)
@@ -179,10 +191,17 @@ let make = (
               <div
                 className="rounded-xl overflow-hidden"
                 style={
-                  marginTop: "6px",
+                  // Open UPWARD (above the trigger): the Country field sits low in
+                  // the form, and on mobile a downward panel is hidden behind the
+                  // fixed Pay button + keyboard. Plenty of fields above => no clip.
+                  position: "absolute",
+                  bottom: "calc(100% + 6px)",
+                  left: "0",
+                  right: "0",
+                  zIndex: "50",
                   border: "1px solid rgba(255,255,255,0.14)",
                   background: "rgba(16,18,26,0.96)",
-                  boxShadow: "0 18px 55px rgba(0,0,0,0.5)",
+                  boxShadow: "0 -18px 55px rgba(0,0,0,0.5)",
                 }>
                 <input
                   type_="text"

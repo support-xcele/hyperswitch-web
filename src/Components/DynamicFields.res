@@ -6,10 +6,33 @@ let flagUrlForCountry = name =>
   ->Array.find(c => c.countryName === name)
   ->Option.map(c => `https://flagcdn.com/24x18/${c.isoAlpha2->String.toLowerCase}.png`)
 
+// Common search aliases so e.g. "america"/"usa" finds the United States even
+// though the word isn't in the official name. ISO alpha-2/3 are added too, so
+// "us"/"usa"/"gb"/"uk" all resolve.
+let countryAliases = name =>
+  switch name {
+  | "United States" => "america usa"
+  | "United Kingdom" => "uk britain england great britain"
+  | "United Arab Emirates" => "uae emirates"
+  | "South Korea" => "korea"
+  | "North Korea" => "korea"
+  | "Russia" => "russian federation"
+  | "Netherlands" => "holland"
+  | "Czech Republic" => "czechia"
+  | "Vietnam" => "viet nam"
+  | "Cote D'Ivoire (Ivory Coast)" => "ivory coast"
+  | _ => ""
+  }
+
 let countryOptionsWithFlags = countryArr =>
-  countryArr->Array.map(name =>
-    ({value: name, flagUrl: ?flagUrlForCountry(name)}: DropdownField.optionType)
-  )
+  countryArr->Array.map(name => {
+    let entry = Country.country->Array.find(c => c.countryName === name)
+    let iso2 = entry->Option.map(c => c.isoAlpha2)->Option.getOr("")
+    let iso3 = entry->Option.flatMap(c => c.isoAlpha3)->Option.getOr("")
+    let flag = iso2 === "" ? None : Some(`https://flagcdn.com/24x18/${iso2->String.toLowerCase}.png`)
+    let keywords = `${name} ${iso2} ${iso3} ${countryAliases(name)}`->String.toLowerCase
+    ({value: name, flagUrl: ?flag, keywords}: DropdownField.optionType)
+  })
 
 module DynamicFieldsToRenderWrapper = {
   @react.component
