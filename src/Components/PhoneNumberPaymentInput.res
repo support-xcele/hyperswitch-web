@@ -36,19 +36,20 @@ let make = () => {
     acc
   })
 
+  // Must equal an option's `value` (which is `${flag}#${code}`), NOT the bare
+  // phone code — otherwise nothing matches, the dropdown falls back to the first
+  // option (Afghanistan) and the split-out countryCode comes back empty.
   let defaultCountryCodeFilteredValue =
     countryAndCodeCodeList
     ->Array.filter(countryObj => {
       countryObj->getDictFromJson->getString("country_code", "") === currentCountryCode.isoAlpha2
     })
     ->Array.get(0)
-    ->Option.getOr(
-      {
-        "phone_number_code": "",
-      }->Identity.anyTypeToJson,
-    )
-    ->getDictFromJson
-    ->getString("phone_number_code", "")
+    ->Option.map(countryObj => {
+      let d = countryObj->getDictFromJson
+      `${d->getString("country_flag", "")}#${d->getString("phone_number_code", "")}`
+    })
+    ->Option.getOr("")
 
   let (valueDropDown, setValueDropDown) = React.useState(_ => defaultCountryCodeFilteredValue)
   let getCountryCodeSplitValue = val => val->String.split("#")->Array.get(1)->Option.getOr("")

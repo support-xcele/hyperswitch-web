@@ -38,6 +38,9 @@ let make = (
   ~width="w-full",
   ~leadingFlagUrl=?,
   ~searchable=false,
+  // Minimum width for the searchable menu panel. Lets a narrow trigger (e.g. the
+  // w-40 phone country-code selector) still open a readable full-width list.
+  ~menuMinWidth="0px",
 ) => {
   let {themeObj, localeString, config} = Recoil.useRecoilValueFromAtom(configAtom)
   let {readOnly} = Recoil.useRecoilValueFromAtom(optionAtom)
@@ -112,6 +115,16 @@ let make = (
   | None => value
   }
   let selectedFlag = selectedOpt->Option.flatMap(o => o.flagUrl)
+  // Compact trigger text: when a displayValue is in play (e.g. the phone field
+  // wants "🇺🇸 +1", not "🇺🇸 United States +1"), prefer the option's displayValue.
+  let triggerText = if isDisplayValueVisible {
+    switch selectedOpt {
+    | Some(o) => o.displayValue->Option.getOr(o.label->Option.getOr(o.value))
+    | None => value
+    }
+  } else {
+    selectedLabel
+  }
   let normalizedQuery = query->String.trim->String.toLowerCase
   let optionNameText = o => (o.label->Option.getOr(o.value))->String.toLowerCase
   // Search against keywords (name + ISO codes + aliases like "america"/"usa")
@@ -182,7 +195,7 @@ let make = (
                 />
               | None => React.null
               }}
-              <span className="truncate flex-1 min-w-0"> {React.string(selectedLabel)} </span>
+              <span className="truncate flex-1 min-w-0"> {React.string(triggerText)} </span>
               <span className="ml-2 flex-shrink-0" style={opacity: "0.55", color: themeObj.colorText}>
                 <Icon size=10 name={"arrow-down"} />
               </span>
@@ -198,6 +211,7 @@ let make = (
                   bottom: "calc(100% + 6px)",
                   left: "0",
                   right: "0",
+                  minWidth: menuMinWidth,
                   zIndex: "50",
                   border: "1px solid rgba(255,255,255,0.14)",
                   background: "rgba(16,18,26,0.96)",

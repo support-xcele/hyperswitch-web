@@ -128,6 +128,13 @@ let make = (
           displayValue={displayValue->Option.getOr("")}
           setDisplayValue={setDisplayValue->Option.getOr(_ => ())}
           isDisplayValueVisible=true
+          // Use the custom glass combobox (not the native <select>): under the
+          // glass theme the native popup renders white-on-white and the
+          // display-value overlay bleeds through the translucent background.
+          // The trigger stays compact via displayValue; the menu is widened so
+          // full country names are readable next to the narrow w-40 trigger.
+          searchable=true
+          menuMinWidth="280px"
         />
       </RenderIf>
       <RenderIf
