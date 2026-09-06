@@ -654,6 +654,7 @@ let make = (
                     <RenderIf condition={stateNames->Array.length > 0}>
                       <PaymentDropDownField
                         fieldName=localeString.stateLabel
+                        searchable=true
                         value=state
                         setValue=setState
                         options={stateNames}
@@ -773,6 +774,7 @@ let make = (
                   <RenderIf condition={stateNames->Array.length > 0}>
                     <PaymentDropDownField
                       fieldName=localeString.stateLabel
+                      searchable=true
                       value=state
                       setValue=setState
                       options={stateNames}

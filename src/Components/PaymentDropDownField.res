@@ -7,6 +7,10 @@ let make = (
   ~options,
   ~disabled=false,
   ~className="",
+  // Glass searchable combobox (DropdownField) instead of the native <select>.
+  // Off by default; the billing State field opts in — under the glass theme
+  // the native popup renders as an unstyled white list.
+  ~searchable=false,
 ) => {
   let {config} = Recoil.useRecoilValueFromAtom(configAtom)
   let {themeObj, localeString} = Recoil.useRecoilValueFromAtom(configAtom)
@@ -71,6 +75,18 @@ let make = (
     themeObj.colorBackground
   }, [themeObj])
   let cursorClass = !disabled ? "cursor-pointer" : "cursor-not-allowed"
+  if searchable {
+    <DropdownField
+      appearance=config.appearance
+      value=value.value
+      setValue={f => setValue(prev => {isValid: Some(true), errorString: "", value: f(prev.value)})}
+      fieldName
+      options={options->DropdownField.updateArrayOfStringToOptionsTypeArray}
+      disabled
+      className
+      searchable=true
+    />
+  } else {
   <RenderIf condition={options->Array.length > 0}>
     <div className="flex flex-col w-full" style={color: themeObj.colorText}>
       <RenderIf
@@ -153,4 +169,5 @@ let make = (
       </div>
     </div>
   </RenderIf>
+}
 }

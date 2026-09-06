@@ -26,11 +26,19 @@ let make = () => {
     let countryFlag = countryObjDict->getString("country_flag", "")
     let phoneNumberCode = countryObjDict->getString("phone_number_code", "")
     let countryName = countryObjDict->getString("country_name", "")
+    let countryIso2 = countryObjDict->getString("country_code", "")
 
+    // Flag as an IMAGE (same flagcdn source as the Country combobox), not the
+    // emoji: Windows Chrome has no colour flag font, so the emoji rendered as
+    // bare letters ("AF Afghanistan +93") and the list looked flagless. The
+    // value keeps the flag#code shape so the default-selection match and the
+    // split-out country code are unchanged.
     let phoneNumberOptionsValue: DropdownField.optionType = {
-      label: `${countryFlag} ${countryName} ${phoneNumberCode}`,
-      displayValue: `${countryFlag} ${phoneNumberCode}`,
+      label: `${countryName} ${phoneNumberCode}`,
+      displayValue: phoneNumberCode,
       value: `${countryFlag}#${phoneNumberCode}`,
+      flagUrl: `https://flagcdn.com/24x18/${countryIso2->String.toLowerCase}.png`,
+      keywords: `${countryName} ${countryIso2} ${phoneNumberCode}`->String.toLowerCase,
     }
     acc->Array.push(phoneNumberOptionsValue)
     acc

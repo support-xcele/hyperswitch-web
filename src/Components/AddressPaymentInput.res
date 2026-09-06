@@ -207,6 +207,7 @@ let make = (~className="", ~paymentType: option<CardThemeType.mode>=?) => {
               stateNames->Array.length > 0}>
             <PaymentDropDownField
               fieldName=localeString.stateLabel
+              searchable=true
               value=state
               className
               setValue=setState
