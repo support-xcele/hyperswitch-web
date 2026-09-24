@@ -135,6 +135,7 @@ let make = (
   let (requiredFieldsBody, setRequiredFieldsBody) = React.useState(_ => Dict.make())
   let (installmentsError, setInstallmentsError) = React.useState(_ => "")
   let areRequiredFieldsValid = Recoil.useRecoilValueFromAtom(RecoilAtoms.areRequiredFieldsValid)
+  let isRequiredPhoneMissing = Recoil.useRecoilValueFromAtom(RecoilAtoms.isRequiredPhoneMissing)
 
   let isInstallmentValid = !showInstallments || selectedInstallmentPlan->Option.isSome
 
@@ -440,12 +441,17 @@ let make = (
           setInstallmentsError(_ => localeString.installmentSelectPlanError)
         }
         if !validFormat {
-          setUserError(localeString.enterValidDetailsText)
+          setUserError(
+            isCardDetailsValid && isRequiredPhoneMissing
+              ? "Please enter your phone number"
+              : localeString.enterValidDetailsText,
+          )
         }
       }
     }
   }, (
     areRequiredFieldsValid,
+    isRequiredPhoneMissing,
     requiredFieldsBody,
     empty,
     complete,

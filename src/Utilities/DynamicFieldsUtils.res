@@ -218,6 +218,7 @@ let useRequiredFieldsEmptyAndValid = (
   let (areRequiredFieldsValid, setAreRequiredFieldsValid) = Recoil.useRecoilState(
     areRequiredFieldsValid,
   )
+  let setIsRequiredPhoneMissing = Recoil.useSetRecoilState(isRequiredPhoneMissing)
   let setAreRequiredFieldsEmpty = Recoil.useSetRecoilState(areRequiredFieldsEmpty)
   let {billingAddress} = Recoil.useRecoilValueFromAtom(optionAtom)
   let cryptoCurrencyNetworks = Recoil.useRecoilValueFromAtom(cryptoCurrencyNetworks)
@@ -230,6 +231,11 @@ let useRequiredFieldsEmptyAndValid = (
   let fieldsArrWithBillingAddress = fieldsArr->addBillingAddressIfUseBillingAddress(billingAddress)
 
   React.useEffect(() => {
+    setIsRequiredPhoneMissing(_ =>
+      !isSavedCardFlow &&
+      fieldsArr->Array.includes(PhoneNumberAndCountryCode) &&
+      phone.value === ""
+    )
     let areRequiredFieldsValid = fieldsArr->Array.reduce(true, (acc, paymentMethodFields) => {
       acc &&
       switch paymentMethodFields {
