@@ -22,6 +22,10 @@ let defaultValue = {
   value: "",
 }
 
+type menuLayout = {openUp: bool, listMaxHeight: string}
+@module("./DropdownViewport.js")
+external getMenuLayout: Nullable.t<Dom.element> => menuLayout = "getMenuLayout"
+
 open RecoilAtoms
 @react.component
 let make = (
@@ -46,6 +50,7 @@ let make = (
   let {readOnly} = Recoil.useRecoilValueFromAtom(optionAtom)
   let loggerState = Recoil.useRecoilValueFromAtom(loggerAtom)
   let dropdownRef = React.useRef(Nullable.null)
+  let searchableTriggerRef = React.useRef(Nullable.null)
   let (inputFocused, setInputFocused) = React.useState(_ => false)
   let {parentURL} = Recoil.useRecoilValueFromAtom(keys)
   let isSpacedInnerLayout = config.appearance.innerLayout === Spaced
@@ -54,6 +59,7 @@ let make = (
   // flags, or glass styling).
   let (isOpen, setIsOpen) = React.useState(_ => false)
   let (query, setQuery) = React.useState(_ => "")
+  let (menuLayout, setMenuLayout) = React.useState(_ => {openUp: true, listMaxHeight: "240px"})
 
   let handleFocus = _ => {
     setInputFocused(_ => true)
@@ -173,9 +179,17 @@ let make = (
           </RenderIf>
           <div className="relative" style={zIndex: isOpen ? "50" : "auto"}>
             <button
+              ref={searchableTriggerRef->ReactDOM.Ref.domRef}
               type_="button"
               disabled={readOnly || disabled}
-              onClick={_ => setIsOpen(p => !p)}
+              onClick={_ => {
+                if isOpen {
+                  setIsOpen(_ => false)
+                } else {
+                  setMenuLayout(_ => getMenuLayout(searchableTriggerRef.current))
+                  setIsOpen(_ => true)
+                }
+              }}
               className={`${inputClassStyles} ${className} w-full flex items-center outline-none ${cursorClass}`}
               style={
                 background: disabled ? disbaledBG : themeObj.colorBackground,
@@ -204,18 +218,19 @@ let make = (
               <div
                 className="rounded-xl overflow-hidden"
                 style={
-                  // Open UPWARD (above the trigger): the Country field sits low in
-                  // the form, and on mobile a downward panel is hidden behind the
-                  // fixed Pay button + keyboard. Plenty of fields above => no clip.
+                  // Choose the direction from the visible space in the host page.
                   position: "absolute",
-                  bottom: "calc(100% + 6px)",
+                  bottom: menuLayout.openUp ? "calc(100% + 6px)" : "auto",
+                  top: menuLayout.openUp ? "auto" : "calc(100% + 6px)",
                   left: "0",
                   right: "0",
                   minWidth: menuMinWidth,
                   zIndex: "50",
                   border: "1px solid rgba(255,255,255,0.14)",
                   background: "rgba(16,18,26,0.96)",
-                  boxShadow: "0 -18px 55px rgba(0,0,0,0.5)",
+                  boxShadow: menuLayout.openUp
+                    ? "0 -18px 55px rgba(0,0,0,0.5)"
+                    : "0 18px 55px rgba(0,0,0,0.5)",
                 }>
                 <input
                   type_="text"
@@ -242,7 +257,7 @@ let make = (
                     width: "calc(100% - 16px)",
                   }
                 />
-                <div className="overflow-y-auto" style={maxHeight: "240px", padding: "0 6px 8px"}>
+                <div className="overflow-y-auto" style={maxHeight: menuLayout.listMaxHeight, padding: "0 6px 8px"}>
                   {filteredOptions
                   ->Array.mapWithIndex((item, index) =>
                     <div
