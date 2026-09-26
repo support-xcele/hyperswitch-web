@@ -625,7 +625,7 @@ let make = (
                 | Email => <EmailPaymentInput />
                 | PhoneNumberAndCountryCode => <PhoneNumberPaymentInput />
                 | StateAndCity =>
-                  <div className={`flex ${isSpacedInnerLayout ? "gap-4" : ""} overflow-hidden`}>
+                  <div className={`flex ${isSpacedInnerLayout ? "gap-4" : ""}`}>
                     <PaymentField
                       fieldName=localeString.cityLabel
                       setValue={setCity}
